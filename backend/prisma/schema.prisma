@@ -1,0 +1,199 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+  SUPPORT
+}
+
+enum DomainStatus {
+  ACTIVE
+  EXPIRING
+  EXPIRED
+  UNKNOWN
+}
+
+enum EventStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model Organization {
+  id                 String  @id @default(uuid())
+  name               String
+  slug               String  @unique
+  eventIngestKeyHash String? @unique
+
+  users            User[]
+  domains          Domain[]
+  events           Event[]
+  webhookEndpoints WebhookEndpoint[]
+  conversations    Conversation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id             String @id @default(uuid())
+  organizationId String
+
+  name         String
+  email        String @unique
+  passwordHash String
+
+  role   Role    @default(OPERATOR)
+  active Boolean @default(true)
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+model Domain {
+  id             String @id @default(uuid())
+  organizationId String
+
+  externalId String?
+  name       String
+
+  registrar String?
+  provider  String  @default("mock")
+
+  status    DomainStatus @default(UNKNOWN)
+  expiresAt DateTime?
+
+  dns Json?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model Event {
+  id             String @id @default(uuid())
+  organizationId String
+
+  externalId String
+  type       String
+  payload    Json
+
+  status EventStatus @default(PENDING)
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model WebhookEndpoint {
+  id             String @id @default(uuid())
+  organizationId String
+
+  name   String
+  url    String
+  secret String
+  active Boolean @default(true)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+model WebhookDelivery {
+  id         String @id @default(uuid())
+  endpointId String
+  eventId    String
+
+  attempt Int @default(1)
+
+  status WebhookDeliveryStatus @default(PENDING)
+
+  httpStatus   Int?
+  errorMessage String?
+
+  attemptedAt DateTime @default(now())
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  event    Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([endpointId, eventId, attempt])
+  @@index([endpointId])
+  @@index([eventId])
+  @@index([status])
+}
+
+model Conversation {
+  id             String @id @default(uuid())
+  organizationId String
+  userId         String
+
+  title String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  messages Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model Message {
+  id             String @id @default(uuid())
+  conversationId String
+
+  role    MessageRole
+  content String
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId])
+}
