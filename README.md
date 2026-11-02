@@ -174,14 +174,26 @@ Use os exemplos da raiz, `backend`, `frontend` e `deploy/aws` conforme o modo de
 
 ## Dados de demonstração
 
-Os usuários abaixo são definidos em `backend/prisma/seed.ts` e compartilham a senha de demonstração `DominioHubDemo123!`.
+As contas principais definidas em `backend/prisma/seed.ts` são:
 
-| E-mail | Role | Organização |
-| --- | --- | --- |
-| `admin@dominiohub.com` | `ADMIN` | DomínioHub Demo |
-| `operator@dominiohub.com` | `OPERATOR` | DomínioHub Demo |
-| `support@dominiohub.com` | `SUPPORT` | DomínioHub Demo |
-| `admin@agencianorte.com` | `ADMIN` | Agência Norte |
+| Organização | ADMIN | OPERATOR | SUPPORT |
+| --- | --- | --- | --- |
+| DomínioHub Demo | `admin@dominiohub.com` | `operator@dominiohub.com` | `support@dominiohub.com` |
+| Agência Norte | `admin@agencianorte.com` | `operator@agencianorte.com` | `support@agencianorte.com` |
+| Agência Horizonte | `admin@agenciahorizonte.com` | `operator@agenciahorizonte.com` | `support@agenciahorizonte.com` |
+
+Senha compartilhada: `demo1234`.
+
+A seed também inclui:
+
+- Usuários adicionais ativos/inativos, visíveis na tela de usuários de cada organização.
+- Domínios em `ACTIVE`, `EXPIRING`, `EXPIRED` e `UNKNOWN`.
+- Eventos em `PENDING`, `PROCESSING`, `PROCESSED` e `FAILED`.
+- Endpoints de webhook ativos/inativos.
+- Deliveries `SUCCESS`, `FAILED` e `PENDING`, com histórico de tentativas.
+- Conversas e mensagens demo do Assistente IA.
+
+Os dados são exclusivamente de demonstração e são isolados por organização.
 
 São credenciais intencionais de desenvolvimento/demo. Na AWS, `DEMO_SEED_ENABLED=false` é o padrão; a carga opcional é feita manualmente com `./deploy/aws/seed-demo.sh`.
 
