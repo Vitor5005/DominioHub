@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   },
   domainRepository: {
     listByOrganization: vi.fn(),
+    findByIdInOrganization: vi.fn(),
     upsertFromProvider: vi.fn(),
   },
   domainProvider: {
@@ -44,6 +45,9 @@ import {
 import {
   domainService,
 } from '../../modules/domains/domain.service.js';
+import {
+  DomainNotFoundError,
+} from '../../modules/domains/domain.errors.js';
 
 const context = {
   organizationId: 'organization-a',
@@ -179,5 +183,37 @@ describe('domain cache behavior', () => {
     expect(
       domainCacheKeys.list('organization-a'),
     ).not.toBe(domainCacheKeys.list('organization-b'));
+  });
+
+  it('does not expose a domain from another organization', async () => {
+    const foreignDomain = {
+      id: 'domain-owned-by-organization-b',
+      organizationId: 'organization-b',
+      name: 'private.test',
+    };
+
+    mocks.domainRepository.findByIdInOrganization.mockImplementation(
+      async (organizationId: string, domainId: string) => {
+        if (
+          organizationId === foreignDomain.organizationId &&
+          domainId === foreignDomain.id
+        ) {
+          return foreignDomain;
+        }
+
+        return null;
+      },
+    );
+
+    await expect(
+      domainService.getById(context, foreignDomain.id),
+    ).rejects.toBeInstanceOf(DomainNotFoundError);
+
+    expect(
+      mocks.domainRepository.findByIdInOrganization,
+    ).toHaveBeenCalledWith(
+      context.organizationId,
+      foreignDomain.id,
+    );
   });
 });

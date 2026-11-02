@@ -1,4 +1,8 @@
 import {
+  createHmac,
+} from 'node:crypto';
+
+import {
   beforeEach,
   describe,
   expect,
@@ -128,6 +132,55 @@ describe('processWebhookDelivery', () => {
     });
   });
 
+  it('sends the expected payload and authenticated HMAC headers', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+    try {
+      mocks.fetch.mockResolvedValue({
+        ok: true,
+        status: 204,
+      });
+
+      const event = eventFixture();
+      const timestamp = Math.floor(Date.now() / 1000).toString();
+      const expectedBody = JSON.stringify({
+        id: event.id,
+        externalId: event.externalId,
+        type: event.type,
+        payload: event.payload,
+        processedAt: event.processedAt,
+      });
+
+      await processWebhookDelivery(job);
+
+      expect(mocks.fetch).toHaveBeenCalledTimes(1);
+
+      const [url, options] = mocks.fetch.mock.calls[0] ?? [];
+      const body = options?.body;
+      const headers = new Headers(options?.headers);
+      const signature = createHmac('sha256', 'test-secret')
+        .update(`${timestamp}.${body}`)
+        .digest('hex');
+
+      expect(url).toBe('https://webhooks.example.test/delivery');
+      expect(options?.method).toBe('POST');
+      expect(options?.redirect).toBe('error');
+      expect(body).toBe(expectedBody);
+      expect(headers.get('content-type')).toBe('application/json');
+      expect(headers.get('x-dominiohub-event-id')).toBe('event-1');
+      expect(headers.get('x-dominiohub-delivery-id')).toBe(
+        'webhook-endpoint-1-event-1',
+      );
+      expect(headers.get('x-dominiohub-timestamp')).toBe(timestamp);
+      expect(headers.get('x-dominiohub-signature')).toBe(
+        `sha256=${signature}`,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('records a failed delivery and throws for an HTTP 500 response', async () => {
     mocks.fetch.mockResolvedValue({
       ok: false,
@@ -181,5 +234,27 @@ describe('processWebhookDelivery', () => {
 
     expect(mocks.fetch).not.toHaveBeenCalled();
     expect(mocks.createDelivery).not.toHaveBeenCalled();
+  });
+
+  it('does not execute fetch when the endpoint URL is unsafe', async () => {
+    const unsafeUrlError = new Error(
+      'Webhook URL is not safe',
+    );
+    mocks.assertSafeWebhookUrl.mockRejectedValue(
+      unsafeUrlError,
+    );
+
+    await expect(
+      processWebhookDelivery(job),
+    ).rejects.toThrow(unsafeUrlError);
+
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.createDelivery).toHaveBeenCalledWith({
+      endpointId: 'endpoint-1',
+      eventId: 'event-1',
+      attempt: 1,
+      status: 'FAILED',
+      errorMessage: 'Webhook URL is not safe',
+    });
   });
 });

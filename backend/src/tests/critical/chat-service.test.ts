@@ -7,6 +7,8 @@ import {
 } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  listConversations: vi.fn(),
+  findConversationWithMessages: vi.fn(),
   findConversation: vi.fn(),
   findRecentMessages: vi.fn(),
   appendExchange: vi.fn(),
@@ -21,6 +23,9 @@ vi.mock('../../config/env.js', () => ({
 
 vi.mock('../../modules/chat/chat.repository.js', () => ({
   chatRepository: {
+    listConversations: mocks.listConversations,
+    findConversationWithMessages:
+      mocks.findConversationWithMessages,
     findConversation: mocks.findConversation,
     findRecentMessages: mocks.findRecentMessages,
     appendExchange: mocks.appendExchange,
@@ -51,6 +56,56 @@ const context = {
 const userId =
   'user-1';
 
+describe('chatService conversation scope', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('lists only conversations from the current organization and user', async () => {
+    const conversations = [
+      {
+        id: 'conversation-1',
+      },
+    ];
+    mocks.listConversations.mockResolvedValue(
+      conversations,
+    );
+
+    await expect(
+      chatService.list(context, userId),
+    ).resolves.toEqual(conversations);
+
+    expect(mocks.listConversations).toHaveBeenCalledWith(
+      'organization-1',
+      userId,
+    );
+  });
+
+  it('rejects a direct conversation lookup outside the current tenant and user scope', async () => {
+    mocks.findConversationWithMessages.mockResolvedValue(
+      null,
+    );
+
+    await expect(
+      chatService.getById(
+        context,
+        userId,
+        'conversation-owned-by-another-user',
+      ),
+    ).rejects.toBeInstanceOf(
+      ConversationNotFoundError,
+    );
+
+    expect(
+      mocks.findConversationWithMessages,
+    ).toHaveBeenCalledWith(
+      'organization-1',
+      userId,
+      'conversation-owned-by-another-user',
+    );
+  });
+});
+
 describe('chatService.sendMessage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -62,7 +117,7 @@ describe('chatService.sendMessage', () => {
     await expect(
       chatService.sendMessage(
         context,
-  userId,
+        userId,
         'conversation-1',
         'Hello',
       ),
@@ -73,6 +128,11 @@ describe('chatService.sendMessage', () => {
     expect(
       mocks.findRecentMessages,
     ).not.toHaveBeenCalled();
+    expect(mocks.findConversation).toHaveBeenCalledWith(
+      'organization-1',
+      userId,
+      'conversation-1',
+    );
   });
 
   it('sends ordered USER and ASSISTANT history plus the new message and persists the exchange', async () => {
@@ -108,7 +168,7 @@ describe('chatService.sendMessage', () => {
     await expect(
       chatService.sendMessage(
         context,
-  userId,
+        userId,
         'conversation-1',
         'Second question',
       ),
@@ -128,9 +188,20 @@ describe('chatService.sendMessage', () => {
         content: 'Second question',
       },
     ]);
+    expect(mocks.findConversation).toHaveBeenCalledWith(
+      'organization-1',
+      userId,
+      'conversation-1',
+    );
+    expect(mocks.findRecentMessages).toHaveBeenCalledWith(
+      'organization-1',
+      userId,
+      'conversation-1',
+      20,
+    );
     expect(mocks.appendExchange).toHaveBeenCalledWith(
       'organization-1',
-  userId,
+      userId,
       'conversation-1',
       'Second question',
       'Second answer',
@@ -149,7 +220,7 @@ describe('chatService.sendMessage', () => {
     await expect(
       chatService.sendMessage(
         context,
-  userId,
+        userId,
         'conversation-1',
         'Hello',
       ),
