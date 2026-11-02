@@ -27,3 +27,6 @@ Thumbs.db
 
 # Prisma generated client
 backend/src/generated/
+
+# AWS deployment environment
+deploy/aws/aws.env
