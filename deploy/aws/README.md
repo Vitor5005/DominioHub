@@ -16,11 +16,11 @@ Docker Compose
   └─ Redis
 ```
 
-O Nginx é o único ponto de entrada público: `/` entrega o frontend React e
-`/api/*` é encaminhado para `backend-api:3000`. A API não é exposta
-publicamente na porta 3000. PostgreSQL e Redis ficam acessíveis somente pela
-rede Docker, e os workers não possuem portas públicas; eles não precisam de
-tráfego direto da Internet.
+O Nginx é o único ponto de entrada público, nas portas 80 e 443: `/` entrega
+o frontend React e `/api/*` é encaminhado para `backend-api:3000`. A API é
+publicada no host somente em `127.0.0.1:${BACKEND_PORT}`. PostgreSQL e Redis
+ficam acessíveis somente pela rede Docker, e os workers não possuem portas
+públicas. API e workers reutilizam a mesma imagem backend.
 
 ## EC2 planejada
 
@@ -34,16 +34,41 @@ real devem ser confirmados manualmente no Console AWS antes da criação. A Fase
 | Regra | Porta/protocolo | Origem |
 | --- | --- | --- |
 | HTTP | `80/TCP` | `0.0.0.0/0` |
+| HTTPS | `443/TCP` | `0.0.0.0/0` |
 | SSH | `22/TCP` | IP público atual do usuário, em `/32` |
 
 Nunca exponha `22/TCP` para `0.0.0.0/0`. Também não exponha publicamente a API
 na porta 3000, PostgreSQL na 5432 ou Redis na 6379.
 
-## HTTPS
+## HTTPS e certificados
 
-O acesso planejado nesta etapa é HTTP pela porta 80. HTTPS na porta 443,
-domínio e certificado serão configurados posteriormente; não configure HTTPS
-na Fase 35.
+A configuração atual usa HTTPS com certificado Let's Encrypt para o IPv4
+do ambiente demo. HTTP redireciona para HTTPS, exceto
+`/.well-known/acme-challenge/`, que permanece acessível para emissão e renovação.
+O Compose publica `${FRONTEND_PORT}:80` e `${HTTPS_PORT:-443}:443`.
+
+O diretório ACME no host é `deploy/certbot/www`, montado em `/var/www/certbot`
+no frontend. `/etc/letsencrypt` também é montado em modo de leitura. O Nginx
+espera `fullchain.pem` e `privkey.pem` em `/etc/letsencrypt/live/<IPv4>/`;
+o arquivo versionado referencia especificamente o IPv4 `3.17.25.68`.
+Uma instalação em outro endereço precisa da configuração e do certificado
+correspondentes antes de iniciar esse Nginx. Em uma máquina nova, o frontend
+não inicia com essa configuração enquanto os arquivos de certificado não
+estiverem provisionados nos caminhos esperados.
+
+A instalação do Certbot, a emissão inicial e a configuração de renovação são
+passos administrativos na EC2; `bootstrap-ec2.sh` e `deploy.sh` não os executam.
+Para renovação automática, o ambiente local da EC2 precisa de um timer systemd
+que execute o Certbot e de um hook de sucesso que recarregue o Nginx do
+container frontend. As unidades, o agendamento e o hook não estão versionados
+neste repositório; confirme seus nomes e funcionamento na EC2, sem presumir que
+o bootstrap os tenha instalado. O hook deve recarregar o Nginx somente após
+uma renovação bem-sucedida.
+
+Os certificados, as chaves privadas e `deploy/aws/aws.env` permanecem locais
+na EC2 e não devem ser versionados. Se o IPv4 público mudar, o certificado do
+IP antigo não cobre o novo: é necessário reemitir o certificado e atualizar
+as referências do Nginx e as URLs do ambiente, incluindo o build do frontend.
 
 ## Persistência
 
@@ -62,16 +87,16 @@ complexidade no MVP/demo. Não há RDS nem ElastiCache nesta topologia.
 Não são usados: RDS, ElastiCache, ALB, NLB, NAT Gateway, ECS, Fargate, EKS,
 múltiplas EC2, ECR obrigatório ou autoscaling.
 
-Antes da Fase 36, confirme manualmente no Console AWS o Free Tier/Free Plan,
+Antes de criar ou manter a instância, confirme no Console AWS o Free Tier/Free Plan,
 créditos disponíveis e válidos, elegibilidade da instância e a estimativa de
 custo. Não assuma preços fixos nem gratuidade permanente.
 
 ## Endereço público
 
-Nenhum Elastic IP é criado. Inicialmente, use o IPv4 público ou o DNS público
-da EC2; um endereço estável e domínio serão definidos depois. Após criar a
-EC2, preencha `deploy/aws/aws.env` e substitua os valores
-`CHANGE_ME_PUBLIC_HOST`.
+Nenhum Elastic IP é criado pelos scripts. O demo atual usa IPv4 público e
+certificado associado ao IP. Esse endereço pode mudar ao parar/iniciar a EC2.
+Após criar a instância, preencha `deploy/aws/aws.env` e substitua
+`CHANGE_ME_PUBLIC_HOST` pelo endereço coberto pelo certificado.
 
 ## Configuração do ambiente
 
@@ -81,9 +106,12 @@ No repositório clonado na EC2, crie o arquivo local de ambiente:
 cp deploy/aws/aws.env.example deploy/aws/aws.env
 ```
 
-Preencha o host público, senha do PostgreSQL, segredo JWT, chave de criptografia
-de webhooks, chave do Gemini e os demais segredos. `aws.env` não deve ser
-commitado e não deve conter valores reais no repositório.
+Preencha o host público, senha do PostgreSQL e a senha correspondente em
+`DATABASE_URL`, segredo JWT, chave de criptografia de webhooks, chave do Gemini
+e os demais segredos. Para o ambiente HTTPS, ajuste as URLs de frontend/API,
+CORS e `VITE_API_URL` para `https://<host>`. `VITE_API_URL` é incorporada no build.
+O exemplo de ambiente é um modelo e não substitui esses ajustes. `aws.env`
+não deve ser commitado.
 
 ## Dados de demonstração
 
@@ -103,8 +131,9 @@ deploy.
 
 ## Deploy real — Fase 36
 
-Esta etapa prepara uma única EC2 manualmente pelo Console AWS; ela não cria
-recursos AWS, não usa credenciais AWS e não executa AWS CLI.
+A criação e configuração da EC2 são manuais pelo Console AWS. Os scripts
+preparam o servidor e executam o Compose; não criam recursos na conta AWS nem
+solicitam credenciais AWS.
 
 ### Criar a instância
 
@@ -122,9 +151,11 @@ crie somente estas entradas de entrada:
 | Regra | Porta/protocolo | Origem |
 | --- | --- | --- |
 | HTTP | `80/TCP` | `0.0.0.0/0` |
+| HTTPS | `443/TCP` | `0.0.0.0/0` |
 | SSH | `22/TCP` | `MEU_IP/32` |
 
-Nunca exponha `3000`, `5432`, `6379` ou SSH para a Internet pública.
+Não exponha `3000`, `5432` ou `6379` à Internet. Restrinja SSH a `MEU_IP/32`,
+nunca a `0.0.0.0/0`.
 
 Conecte-se com:
 
@@ -138,6 +169,16 @@ O Docker Engine é instalado pelos pacotes do Amazon Linux. Caso `docker compose
 ainda não esteja disponível, o bootstrap instala o plugin oficial do projeto
 [`docker/compose`](https://github.com/docker/compose), na versão fixa `v5.6.1`
 definida no script, e valida a integridade do download com SHA-256.
+
+O alvo é Amazon Linux 2023 x86_64, com o usuário `ec2-user`. O bootstrap
+atualiza o sistema, instala Git/Docker se ausentes, inicia Docker e associa
+o usuário ao grupo Docker. Ele não clona o repositório. Se Git ainda não
+estiver disponível, envie o projeto/script à EC2 para executar o bootstrap.
+
+Docker Buildx deve estar disponível para os builds de imagem. O bootstrap
+não o instala nem o verifica: sua instalação/configuração, se necessária,
+continua manual na EC2. Certbot, certificados, timer systemd e hook de
+renovação também dependem da preparação local descrita acima.
 
 Clone o repositório sem incluir token/PAT na URL e sem fixar branch no comando:
 
@@ -160,6 +201,7 @@ seja aplicado. Confirme a preparação com:
 ```bash
 docker info
 docker compose version
+docker buildx version
 ```
 
 ### Configurar o ambiente e publicar
@@ -174,19 +216,21 @@ cp deploy/aws/aws.env.example deploy/aws/aws.env
 Configure o host público conceitualmente assim:
 
 ```dotenv
-FRONTEND_URL=http://EC2_PUBLIC_HOST
-API_PUBLIC_URL=http://EC2_PUBLIC_HOST
-CORS_ALLOWED_ORIGINS=http://EC2_PUBLIC_HOST
-VITE_API_URL=http://EC2_PUBLIC_HOST/api/v1
+FRONTEND_URL=https://EC2_PUBLIC_HOST
+API_PUBLIC_URL=https://EC2_PUBLIC_HOST
+CORS_ALLOWED_ORIGINS=https://EC2_PUBLIC_HOST
+VITE_API_URL=https://EC2_PUBLIC_HOST/api/v1
 BACKEND_PORT=3000
 FRONTEND_PORT=80
+HTTPS_PORT=443
 ```
 
-Defina valores fortes e exclusivos para `POSTGRES_PASSWORD`, `JWT_SECRET` e
-`WEBHOOK_SECRET_ENCRYPTION_KEY`; por exemplo, gere-os localmente com
-`openssl rand -hex 32` ou `openssl rand -base64 48`. Nunca publique os valores,
-peça-os ao Codex ou os imprima em logs. Informe também uma chave Gemini real em
-`GEMINI_API_KEY`.
+Defina valores fortes e exclusivos para os segredos. Para senha PostgreSQL e
+JWT, pode gerar valores com `openssl rand -hex 32`. A chave de criptografia
+de webhooks exige exatamente 32 bytes codificados em base64: use
+`openssl rand -base64 32` para `WEBHOOK_SECRET_ENCRYPTION_KEY`. Preencha
+`GEMINI_API_KEY` com sua chave real. Não publique esses valores nem os imprima
+em logs.
 
 Antes de iniciar containers, execute a verificação e depois o deploy:
 
@@ -196,8 +240,19 @@ Antes de iniciar containers, execute a verificação e depois o deploy:
 ./deploy/aws/status.sh
 ```
 
-Abra `http://EC2_PUBLIC_HOST` no navegador. A API deve ser acessada somente
-por `http://EC2_PUBLIC_HOST/api/v1` através do Nginx; não exponha nem use
+O preflight verifica ferramentas, daemon Docker, ambiente sem placeholders,
+arquitetura, memória, disco, configuração Compose e ocupação das portas 80/3000.
+Ocupação pelos serviços do Compose atual é aceita para redeploy. Ele não
+valida certificados, Buildx ou a porta 443. O deploy executa o preflight antes
+de buildar/subir os serviços; migrations precedem o seed condicional, a API e
+os workers. Os volumes permanecem preservados.
+
+O status verifica a API em `http://127.0.0.1:3000/api/v1/health` e o frontend
+em `http://127.0.0.1/` se houver curl. O teste do frontend aceita o redirect
+HTTP e não valida o certificado TLS; confira HTTPS também pelo navegador.
+
+Abra `https://EC2_PUBLIC_HOST` no navegador. A API deve ser acessada somente
+por `https://EC2_PUBLIC_HOST/api/v1` através do Nginx; não exponha nem use
 publicamente `:3000`. Teste também o login. Após a saúde do ambiente, dados de demonstração são
 opcionais e manuais:
 
@@ -205,13 +260,20 @@ opcionais e manuais:
 ./deploy/aws/seed-demo.sh
 ```
 
-Para atualizar o código, revise a alteração, execute `git pull` e repita o
-deploy manualmente:
+## Atualização da aplicação
+
+Na branch de deploy, atualize o código e execute:
 
 ```bash
-git pull
+git pull origin deploy
+./deploy/aws/preflight.sh
 ./deploy/aws/deploy.sh
+./deploy/aws/status.sh
 ```
+
+O arquivo `deploy/aws/aws.env` e os certificados permanecem locais na EC2 e
+não devem ser versionados. Deploy não executa `git pull` automaticamente,
+não remove volumes e não emite nem renova certificados.
 
 Logs operacionais:
 
@@ -232,6 +294,7 @@ EC2 reduz custos de computação, mas volumes EBS e outros recursos associados
 podem continuar cobrando. Nunca execute `docker compose down -v`, pois isso
 remove os volumes de dados.
 
-Ficam fora desta fase: domínio próprio, HTTPS/certificado, Elastic IP, backup
-automatizado, RDS, ElastiCache, balanceador, autoscaling e qualquer arquitetura
-multi-instância.
+Permanecem fora desta arquitetura: domínio próprio, Elastic IP automatizado,
+backup automatizado, RDS, ElastiCache, balanceador, autoscaling e múltiplas
+instâncias. HTTPS é parte da configuração atual; seu provisionamento e a
+automação de renovação pertencem à configuração local da EC2.
