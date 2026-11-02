@@ -2,6 +2,7 @@ x-backend-environment: &backend-environment
   NODE_ENV: production
   PORT: "3000"
   FRONTEND_URL: ${FRONTEND_URL}
+  API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:3000}
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
   TRUST_PROXY: ${TRUST_PROXY}
   DATABASE_URL: ${DATABASE_URL}
@@ -18,6 +19,7 @@ x-backend-environment: &backend-environment
   GEMINI_MODEL: ${GEMINI_MODEL}
   AI_HISTORY_LIMIT: ${AI_HISTORY_LIMIT}
   AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS}
+  DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED}
 
 x-backend-image: &backend-image
   image: dominiohub-backend:local
@@ -28,6 +30,7 @@ x-backend-image: &backend-image
 services:
   postgres:
     image: postgres:17-alpine
+    attach: false
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -43,6 +46,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    attach: false
     command:
       - redis-server
       - --appendonly
@@ -60,22 +64,41 @@ services:
 
   backend-migrate:
     image: dominiohub-backend-migrate:local
+    attach: false
     build:
       context: ./backend
       target: migrate
     command:
-      - npx
-      - prisma
-      - migrate
-      - deploy
-      - --config
-      - prisma7.config.ts
+      - /bin/sh
+      - -c
+      - >-
+        echo '[MIGRATIONS] Aplicando migrations...' &&
+        npx prisma migrate deploy --config prisma7.config.ts &&
+        echo '[MIGRATIONS] Migrations aplicadas com sucesso.'
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL}
     depends_on:
       postgres:
         condition: service_healthy
+    restart: "no"
+
+  backend-seed:
+    image: dominiohub-backend-migrate:local
+    attach: false
+    build:
+      context: ./backend
+      target: migrate
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        if [ "$$DEMO_SEED_ENABLED" != "true" ]; then exit 0; fi;
+        npm run db:seed
+    environment: *backend-environment
+    depends_on:
+      backend-migrate:
+        condition: service_completed_successfully
     restart: "no"
 
   backend-api:
@@ -89,7 +112,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      backend-migrate:
+      backend-seed:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -105,6 +128,7 @@ services:
 
   event-worker:
     <<: *backend-image
+    attach: false
     command: ["npm", "run", "worker:events:start"]
     environment: *backend-environment
     depends_on:
@@ -112,12 +136,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      backend-migrate:
+      backend-seed:
         condition: service_completed_successfully
     restart: unless-stopped
 
   webhook-worker:
     <<: *backend-image
+    attach: false
     command: ["npm", "run", "worker:webhooks:start"]
     environment: *backend-environment
     depends_on:
@@ -125,7 +150,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      backend-migrate:
+      backend-seed:
         condition: service_completed_successfully
     restart: unless-stopped
 
@@ -137,6 +162,15 @@ services:
         VITE_API_URL: ${VITE_API_URL}
     ports:
       - "${FRONTEND_PORT}:80"
+    environment:
+      FRONTEND_URL: ${FRONTEND_URL}
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - >-
+        echo "[FRONTEND] DomínioHub Web disponível em $$FRONTEND_URL";
+        exec nginx -g 'daemon off;'
     depends_on:
       backend-api:
         condition: service_healthy

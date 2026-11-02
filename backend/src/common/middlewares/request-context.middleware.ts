@@ -52,6 +52,10 @@ export function requestContextMiddleware(
       fields.role = request.user.role;
     }
 
+    if (request.path === '/api/v1/health') {
+      return;
+    }
+
     logger.info(
       'HTTP request completed',
       fields,

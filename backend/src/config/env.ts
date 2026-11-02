@@ -18,6 +18,10 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
 
   FRONTEND_URL: z.string().url().default('http://localhost:5173'),
+  API_PUBLIC_URL: z
+    .string()
+    .url()
+    .default('http://localhost:3000'),
   CORS_ALLOWED_ORIGINS: z
     .string()
     .default('http://localhost:5173'),

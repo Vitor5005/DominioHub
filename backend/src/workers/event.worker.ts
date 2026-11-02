@@ -32,6 +32,10 @@ const eventWorker = new Worker<EventProcessingJobData>(
   },
 );
 
+console.log(
+  '[WORKER:EVENTS] Worker de eventos iniciado e aguardando jobs.',
+);
+
 eventWorker.on('completed', (job) => {
   logger.info('Event job completed', {
     jobId: job.id,

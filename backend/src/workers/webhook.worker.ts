@@ -25,6 +25,10 @@ const webhookWorker = new Worker<WebhookDeliveryJobData>(
   },
 );
 
+console.log(
+  '[WORKER:WEBHOOKS] Worker de webhooks iniciado e aguardando jobs.',
+);
+
 webhookWorker.on('completed', (job) => {
   logger.info('Webhook job completed', {
     jobId: job.id,
