@@ -82,3 +82,9 @@ docker compose logs -f backend-seed
 docker compose logs -f event-worker
 docker compose logs -f webhook-worker
 ```
+
+## Deploy AWS
+
+O projeto está preparado para deploy em uma única EC2 usando Docker Compose.
+O procedimento real da Fase 36, configuração e scripts estão em
+[deploy/aws](deploy/aws/README.md).

@@ -73,13 +73,46 @@ fi
 
 docker compose --env-file deploy/aws/aws.env config --quiet
 
+is_compose_service_running() {
+  local service_name="$1"
+  local container_id
+  local running
+
+  container_id="$(
+    docker compose --env-file deploy/aws/aws.env \
+      ps -q "${service_name}"
+  )"
+
+  if [[ -z "${container_id}" ]]; then
+    return 1
+  fi
+
+  running="$(
+    docker inspect -f '{{.State.Running}}' \
+      "${container_id}" 2>/dev/null || true
+  )"
+
+  [[ "${running}" == "true" ]]
+}
+
 if command -v ss >/dev/null 2>&1; then
-  for port in 80 3000; do
-    if ss -ltnH "sport = :${port}" | grep -q .; then
-      printf 'Erro: a porta %s já está ocupada no host.\n' "${port}" >&2
+  if ss -ltnH "sport = :80" | grep -q .; then
+    if is_compose_service_running frontend; then
+      printf 'Porta 80 já utilizada pelo frontend atual do DomínioHub; redeploy permitido.\n'
+    else
+      printf 'Erro: porta 80 está ocupada por outro processo.\n' >&2
       exit 1
     fi
-  done
+  fi
+
+  if ss -ltnH "sport = :3000" | grep -q .; then
+    if is_compose_service_running backend-api; then
+      printf 'Porta 3000 já utilizada pelo backend atual do DomínioHub; redeploy permitido.\n'
+    else
+      printf 'Erro: porta 3000 está ocupada por outro processo.\n' >&2
+      exit 1
+    fi
+  fi
 else
   printf 'Aviso: ss não está disponível; verificação de portas foi pulada.\n' >&2
 fi

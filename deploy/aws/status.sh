@@ -22,13 +22,27 @@ cd "${project_root}"
 docker compose --env-file deploy/aws/aws.env ps
 
 if ! command -v curl >/dev/null 2>&1; then
-  printf 'curl não está disponível; teste HTTP do healthcheck foi pulado.\n'
+  printf 'curl não está disponível; testes HTTP foram pulados.\n'
   exit 0
 fi
 
-if curl --fail --silent --show-error http://127.0.0.1:3000/api/v1/health; then
-  printf '\nHealthcheck local da API: OK.\n'
+api_failed=0
+frontend_failed=0
+
+if curl --fail --silent --output /dev/null http://127.0.0.1:3000/api/v1/health; then
+  printf 'API: OK\n'
 else
-  printf '\nHealthcheck local da API falhou.\n' >&2
+  printf 'API: FALHOU\n' >&2
+  api_failed=1
+fi
+
+if curl --fail --silent --output /dev/null http://127.0.0.1/; then
+  printf 'Frontend: OK\n'
+else
+  printf 'Frontend: FALHOU\n' >&2
+  frontend_failed=1
+fi
+
+if ((api_failed || frontend_failed)); then
   exit 1
 fi

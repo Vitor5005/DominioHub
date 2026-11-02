@@ -20,6 +20,7 @@ fi
 cd "${project_root}"
 
 docker compose --env-file deploy/aws/aws.env config --quiet
+./deploy/aws/preflight.sh
 docker compose --env-file deploy/aws/aws.env up -d --build --remove-orphans
 docker compose --env-file deploy/aws/aws.env ps
 
