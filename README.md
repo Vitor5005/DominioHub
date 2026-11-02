@@ -134,7 +134,7 @@ O Compose recebe o ambiente do `.env` da raiz. `backend/.env.example` é a refer
 
 ### Ambiente completo com Nginx
 
-O comando `docker compose up --build` inclui o frontend Nginx. A configuração atual publica HTTP/HTTPS, redireciona para HTTPS e referencia certificados específicos da demo em `/etc/letsencrypt`. Sem esses arquivos previamente provisionados, o container frontend não inicia. As portas e URLs dos exemplos, por si só, não provisionam TLS; consulte o [procedimento AWS](deploy/aws/README.md) para o ambiente completo.
+O comando `docker compose up --build` inicia o ambiente completo de desenvolvimento, incluindo o frontend servido pelo Nginx. No ambiente local, o frontend utiliza somente HTTP e fica disponível em `http://localhost:8080`; a API permanece disponível em `http://localhost:3000`, além de ser encaminhada pelo Nginx através de `/api/`. Certificados TLS, Certbot e a porta 443 pertencem exclusivamente ao ambiente de deploy e não são necessários para executar a aplicação localmente.
 
 Para acompanhar e encerrar o ambiente local:
 
@@ -165,7 +165,7 @@ Se for necessário reaplicar migrations manualmente, use `docker compose run --r
 | Autenticação | `JWT_SECRET`, `JWT_EXPIRES_IN`, `JWT_ISSUER`, `JWT_AUDIENCE` |
 | Domínios | `DOMAIN_PROVIDER` (atualmente `mock`) |
 | IA | `AI_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `AI_HISTORY_LIMIT`, `AI_REQUEST_TIMEOUT_MS` |
-| URLs, portas e proxy | `PORT`, `BACKEND_PORT`, `FRONTEND_PORT`, `HTTPS_PORT`, `FRONTEND_URL`, `API_PUBLIC_URL`, `VITE_API_URL`, `CORS_ALLOWED_ORIGINS`, `TRUST_PROXY` |
+| URLs, portas e proxy | `PORT`, `BACKEND_PORT`, `FRONTEND_PORT`, `FRONTEND_URL`, `API_PUBLIC_URL`, `VITE_API_URL`, `CORS_ALLOWED_ORIGINS`, `TRUST_PROXY` |
 | Webhooks/demo | `WEBHOOK_SECRET_ENCRYPTION_KEY`, `DEMO_SEED_ENABLED` |
 
 Use os exemplos da raiz, `backend`, `frontend` e `deploy/aws` conforme o modo de execução. Segredos reais ficam apenas nos arquivos locais ignorados pelo Git. `JWT_SECRET` exige pelo menos 32 caracteres; a chave de webhooks exige Base64 de exatamente 32 bytes.
